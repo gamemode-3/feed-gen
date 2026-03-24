@@ -24,7 +24,7 @@ LANGUAGE = "en"
 POST_DIR = Path("./posts")
 OUTPUT_FILE = Path("./feed.xml")
 
-#== main settings ==#
+#===================#
 
 def gen_post_url(index: int, slug: str):
     return POST_URL_PATTERN.replace("{id}", str(index)).replace("{slug}", slug)
@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 import markdown2
 from bs4 import BeautifulSoup
 import getpass
+
+upload_to_neocities = UPLOAD_TO_NEOCITIES
 
 def format_time(t: datetime):
     return t.strftime("%a, %d %b %Y %H:%M:%S GMT")
@@ -67,7 +69,8 @@ def gen_post(text: str, index: int, modified: datetime) -> tuple[str, list[tuple
         neocities_path = Path(NEOCITIES_IMAGE_UPLOAD_PATH) / rel_path
         upload_pair = (str(local_path), str(neocities_path))
         images_to_upload.append(upload_pair)
-        img["src"] = f"https://{NEOCITIES_USERNAME}.neocities.org/" + str(neocities_path)
+        if upload_to_neocities:
+            img["src"] = f"https://{NEOCITIES_USERNAME}.neocities.org/" + str(neocities_path)
 
     title_o = soup.find("h1")
     title = ""
@@ -150,9 +153,6 @@ def get_all_posts() -> tuple[list[str], list[tuple[str, str]]]:
 
 
 if __name__ == "__main__":
-
-    upload_to_neocities = UPLOAD_TO_NEOCITIES
-
     if upload_to_neocities:
         try:
             import neocities
