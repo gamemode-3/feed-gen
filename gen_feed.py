@@ -1,49 +1,75 @@
-import html
-import os
 from pathlib import Path
-import time
 
+
+#== main settings ==#
 
 FEED_NAME = "mai.loeckchen"
 FEED_DESC = "what i'm up to"
-FEED_IMAGE = "image.png"
+FEED_IMAGE = "https://mailoeckchen.neocities.org/favicon.ico"
 FEED_URL = "https://mailoeckchen.neocities.org/up-to/feed.xml"
 AUTHOR_NAME = "mai.loeckchen"
 AUTHOR_EMAIL = "mailoeckchen@proton.me"
 POST_URL_PATTERN = "https://mailoeckchen.neocities.org/up-to/view?post={slug}"
 
+UPLOAD_TO_NEOCITIES = True
+NEOCITIES_UPLOAD_PATH = "up-to/feed.xml"
+NEOCITIES_IMAGE_UPLOAD_PATH = "up-to/feed-media/"
+
 
 COPYRIGHT = AUTHOR_NAME
+NEOCITIES_USERNAME = "mailoeckchen"
 LANGUAGE = "en"
 
 
 POST_DIR = Path("./posts")
 OUTPUT_FILE = Path("./feed.xml")
 
+#== main settings ==#
 
 def gen_post_url(index: int, slug: str):
     return POST_URL_PATTERN.replace("{id}", str(index)).replace("{slug}", slug)
 
 
+import os
 from datetime import datetime, timezone
 import markdown2
-from bs4 import BeautifulSoup, PageElement
-
+from bs4 import BeautifulSoup
+import getpass
 
 def format_time(t: datetime):
     return t.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
 
-def gen_post(text: str, index: int, modified: datetime):
+def gen_post(text: str, index: int, modified: datetime) -> tuple[str, list[tuple[str, str]]]:
 
-    md_html = markdown2.markdown(text, extras=["fenced-code-blocks", "header-ids", "latex", "metadata", "strike", "tables", "tg-spoiler"])
+
+    md_html = markdown2.markdown(text, extras=["fenced-code-blocks", "header-ids", "metadata", "strike", "tables", "tg-spoiler"])
 
     metadata = md_html.metadata
-    print(metadata)
 
     soup = BeautifulSoup(md_html, "html.parser")
 
-    title_o: None | PageElement = soup.find("h1")
+    images_to_upload = []
+    all_img = soup.find_all("img")
+    for img in all_img:
+        src = img["src"]
+        if src is None:
+            continue
+        src = str(src)
+        if src.startswith("http"):
+            continue
+        local_path = Path(POST_DIR) / Path(src)
+        if not local_path.exists() or not local_path.is_file():
+            print(f"WARNING: '{local_path}' is not a file")
+            continue
+        
+        rel_path = local_path.relative_to(Path(POST_DIR))
+        neocities_path = Path(NEOCITIES_IMAGE_UPLOAD_PATH) / rel_path
+        upload_pair = (str(local_path), str(neocities_path))
+        images_to_upload.append(upload_pair)
+        img["src"] = f"https://{NEOCITIES_USERNAME}.neocities.org/" + str(neocities_path)
+
+    title_o = soup.find("h1")
     title = ""
     if title_o != None:
         title = title_o.text
@@ -75,7 +101,7 @@ def gen_post(text: str, index: int, modified: datetime):
 
     post_url = gen_post_url(index, slug)
 
-    return f'''
+    post = f'''
         <item slug="{slug}">
             <title><![CDATA[{title}]]></title>
             <description><![CDATA[{desc}]]></description>
@@ -94,8 +120,10 @@ def gen_post(text: str, index: int, modified: datetime):
         </item>
     '''
 
+    return (post, images_to_upload)
 
-def get_all_posts() -> list[str]:
+
+def get_all_posts() -> tuple[list[str], list[tuple[str, str]]]:
     files = []
 
     for file in os.scandir(POST_DIR):
@@ -104,20 +132,42 @@ def get_all_posts() -> list[str]:
             files.append((file, mtime))
 
     posts = []
+    images = []
 
     
     files.sort(key=lambda x: x[1])
 
     for i, (file, mtime) in enumerate(files):
         with open(file) as f:
-            posts.append(gen_post(f.read(), i, datetime.fromtimestamp(mtime)))
+            post, image_list = gen_post(f.read(), i, datetime.fromtimestamp(mtime))
+            posts.append(post)
+            for img in image_list:
+                images.append(img) 
     
 
-    return posts
+    return posts, images
 
 
 
 if __name__ == "__main__":
+
+    upload_to_neocities = UPLOAD_TO_NEOCITIES
+
+    if upload_to_neocities:
+        try:
+            import neocities
+            try:
+                key = os.environ["NEOCITIES_API_KEY"]
+            except:
+                key=getpass.getpass("neocities API key: ")
+                if key.strip() in ["no", "n", ""]:
+                    upload_to_neocities = False
+        except ImportError as e:
+            if e.name == "neocities":
+                print("python-neocities is not installed. not uploading to neocities. install from: https://github.com/neocities/python-neocities")
+                upload_to_neocities = False
+            else:
+                raise e
 
     generation_time = format_time(datetime.now(timezone.utc))
 
@@ -165,8 +215,18 @@ if __name__ == "__main__":
     </channel>
 </rss>'''
 
+    posts, images_to_upload = get_all_posts()
 
-    feed = f'{head}{"".join(get_all_posts())}{tail}'
+    feed = f'{head}{"".join(posts)}{tail}'
 
     with open(OUTPUT_FILE, "w") as f:
         f.write(feed)
+
+    if upload_to_neocities:
+        nc = neocities.NeoCities(api_key=key.strip())
+        try:
+            nc.upload((str(OUTPUT_FILE), NEOCITIES_UPLOAD_PATH), *images_to_upload)
+        except neocities.neocities.NeoCities.InvalidRequestError as e:
+            print(e)
+            print()
+            print("Your API key might be incorrect / broken")
