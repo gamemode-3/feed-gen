@@ -5,7 +5,7 @@ from pathlib import Path
 
 FEED_NAME = "mai.loeckchen"
 FEED_DESC = "what i'm up to"
-FEED_IMAGE = "https://mailoeckchen.neocities.org/favicon.ico"
+FEED_IMAGE = "https://mailoeckchen.neocities.org/image/maigloeckchen.png"
 FEED_URL = "https://mailoeckchen.neocities.org/up-to/feed.xml"
 AUTHOR_NAME = "mai.loeckchen"
 AUTHOR_EMAIL = "mailoeckchen@proton.me"
@@ -50,7 +50,6 @@ def gen_post(text: str, index: int, modified: datetime) -> tuple[str, list[tuple
     metadata = md_html.metadata
 
     soup = BeautifulSoup(md_html, "html.parser")
-
     images_to_upload = []
     all_img = soup.find_all("img")
     for img in all_img:
@@ -81,7 +80,7 @@ def gen_post(text: str, index: int, modified: datetime) -> tuple[str, list[tuple
     
     for li in soup.find_all("li"):
         span = soup.new_tag("span")
-        for child in li.contents:
+        for child in list(li.children):
             span.append(child)
         li.clear()
         li.append(span)
@@ -105,7 +104,7 @@ def gen_post(text: str, index: int, modified: datetime) -> tuple[str, list[tuple
     post_url = gen_post_url(index, slug)
 
     post = f'''
-        <item slug="{slug}">
+        <item>
             <title><![CDATA[{title}]]></title>
             <description><![CDATA[{desc}]]></description>
             <link>
@@ -114,6 +113,7 @@ def gen_post(text: str, index: int, modified: datetime) -> tuple[str, list[tuple
             <guid isPermaLink="false">
                 {post_url}
             </guid>
+            <dc:identifier>{slug}</dc:identifier>
             <dc:creator><![CDATA[{AUTHOR_NAME}]]></dc:creator>
             <pubDate>{format_time(modified)}</pubDate>
             {img_html}
@@ -135,20 +135,17 @@ def get_all_posts() -> tuple[list[str], list[tuple[str, str]]]:
             files.append((file, mtime))
 
     posts = []
-    images = []
 
     
     files.sort(key=lambda x: x[1])
 
     for i, (file, mtime) in enumerate(files):
         with open(file) as f:
-            post, image_list = gen_post(f.read(), i, datetime.fromtimestamp(mtime))
+            post, image_list = gen_post(f.read(), i, datetime.fromtimestamp(mtime, tz=timezone.utc))
             posts.append(post)
-            for img in image_list:
-                images.append(img) 
     
 
-    return posts, images
+    return posts, image_list
 
 
 
@@ -156,27 +153,24 @@ if __name__ == "__main__":
     if upload_to_neocities:
         try:
             import neocities
-            try:
-                key = os.environ["NEOCITIES_API_KEY"]
-            except:
-                key=getpass.getpass("neocities API key: ")
-                if key.strip() in ["no", "n", ""]:
-                    upload_to_neocities = False
+            k = os.environ.get("NEOCITIES_API_KEY")
+            key = k or getpass.getpass("neocities API key: ").strip()
+            if key in ["no", "n", ""]:
+                upload_to_neocities = False
         except ImportError as e:
             if e.name == "neocities":
                 print("python-neocities is not installed. not uploading to neocities. install from: https://github.com/neocities/python-neocities")
                 upload_to_neocities = False
             else:
-                raise e
+                raise
 
     generation_time = format_time(datetime.now(timezone.utc))
+
 
     head = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmlns:content="http://purl.org/rss/1.0/modules/content/"
-    xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"
-    xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
-    xmlns:googleplay="http://www.google.com/schemas/play-podcasts/1.0">
+    xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
     <channel>
         <title><![CDATA[{FEED_NAME}]]></title>
         <description>
@@ -199,18 +193,8 @@ if __name__ == "__main__":
                 type="application/rss+xml"/>
         <copyright><![CDATA[{COPYRIGHT}]]></copyright>
         <language><![CDATA[{LANGUAGE}]]></language>
-        <webMaster><![CDATA[{AUTHOR_EMAIL}]]></webMaster>
-        
-        <itunes:owner>
-            <itunes:email><![CDATA[{AUTHOR_EMAIL}]]></itunes:email>
-            <itunes:name><![CDATA[{AUTHOR_NAME}]]></itunes:name>
-        </itunes:owner>
-        <itunes:author><![CDATA[{AUTHOR_NAME}]]></itunes:author>
-        <itunes:block>Yes</itunes:block>
-        
-        <googleplay:owner><![CDATA[{AUTHOR_EMAIL}]]></googleplay:owner>
-        <googleplay:email><![CDATA[{AUTHOR_EMAIL}]]></googleplay:email>
-        <googleplay:author><![CDATA[{AUTHOR_NAME}]]></googleplay:author>'''
+        <webMaster><![CDATA[{AUTHOR_EMAIL} ({AUTHOR_NAME})]]></webMaster>
+        '''
     tail = '''
     </channel>
 </rss>'''
