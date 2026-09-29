@@ -19,7 +19,7 @@ sudo apt install python3 python3-markdown2 python3-bs4
 ```
 
 ### optional
-
+[python-neocities](https://github.com/neocities/python-neocities) (cannot be installed from pip)
 
 ## how to use
 
